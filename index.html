@@ -54,6 +54,7 @@
           <option value="low">🟢 Low</option>
         </select>
         <input type="date" id="due-input" />
+        <input type="time" id="reminder-time" title="Set Reminder Time 🔔" placeholder="🔔 Reminder" />
       </div>
     </div>
 
@@ -81,6 +82,16 @@
       <span class="bottom-info" id="bottom-info"></span>
       <button class="btn-clear" id="clear-btn">Clear completed</button>
     </div>
+  </div>
+
+  <!-- Reminder Toast Notification -->
+  <div class="reminder-toast" id="reminder-toast">
+    <div class="toast-icon">🔔</div>
+    <div class="toast-body">
+      <div class="toast-title">Reminder!</div>
+      <div class="toast-msg" id="toast-msg"></div>
+    </div>
+    <button class="toast-close" id="toast-close">✖</button>
   </div>
 
   <script src="script.js"></script>
