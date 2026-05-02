@@ -36,7 +36,7 @@ function getFiltered() {
       return a.due.localeCompare(b.due);
     }
     if (sort === 'alpha') return a.text.localeCompare(b.text);
-    return b.id - a.id; // default: newest first
+    return b.id - a.id;
   });
 
   return list;
@@ -96,7 +96,7 @@ function render() {
     const overdue = isOverdue(todo.due) && !todo.done;
 
     const li = document.createElement('div');
-    li.className = 'todo-item';
+    li.className = 'todo-item' + (todo.reminderTime ? ' has-reminder' : '');
     li.draggable  = true;
     li.dataset.idx = realIdx;
 
@@ -112,6 +112,9 @@ function render() {
             ? `<span class="due-date ${overdue ? 'overdue' : ''}">
                  📅 ${formatDate(todo.due)}${overdue ? ' (overdue)' : ''}
                </span>`
+            : ''}
+          ${todo.reminderTime
+            ? `<span class="reminder-badge">🔔 ${todo.reminderTime}</span>`
             : ''}
         </div>
       </div>
@@ -168,7 +171,7 @@ function render() {
     });
   });
 
-  // Edit (inline prompt)
+  // Edit
   listEl.querySelectorAll('[data-edit]').forEach(el => {
     el.addEventListener('click', () => {
       const i = +el.dataset.edit;
@@ -189,35 +192,38 @@ function addTodo() {
   const text = document.getElementById('task-input').value.trim();
   if (!text) return;
 
+  const reminderTime = document.getElementById('reminder-time').value;
+  const dueDate      = document.getElementById('due-input').value;
+
   todos.unshift({
-    id:       Date.now(),
+    id:           Date.now(),
     text,
-    category: document.getElementById('cat-sel').value,
-    priority: document.getElementById('pri-sel').value,
-    due:      document.getElementById('due-input').value,
-    done:     false
+    category:     document.getElementById('cat-sel').value,
+    priority:     document.getElementById('pri-sel').value,
+    due:          dueDate,
+    reminderTime: reminderTime || null,
+    reminderDate: dueDate || new Date().toISOString().slice(0, 10),
+    reminded:     false,
+    done:         false
   });
 
-  document.getElementById('task-input').value = '';
-  document.getElementById('due-input').value  = '';
+  document.getElementById('task-input').value    = '';
+  document.getElementById('due-input').value     = '';
+  document.getElementById('reminder-time').value = '';
 
   save();
   render();
 
-  // Slide-in animation for the first item
   const first = document.querySelector('.todo-item');
   if (first) first.classList.add('new-item');
 }
 
 // ---- Event Listeners ----
-
-// Add button & Enter key
 document.getElementById('add-btn').addEventListener('click', addTodo);
 document.getElementById('task-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') addTodo();
 });
 
-// Filter tabs
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
     filter = tab.dataset.filter;
@@ -227,19 +233,16 @@ document.querySelectorAll('.tab').forEach(tab => {
   });
 });
 
-// Search
 document.getElementById('search-input').addEventListener('input', e => {
   search = e.target.value;
   render();
 });
 
-// Sort
 document.getElementById('sort-sel').addEventListener('change', e => {
   sort = e.target.value;
   render();
 });
 
-// Clear completed
 document.getElementById('clear-btn').addEventListener('click', () => {
   todos = todos.filter(t => !t.done);
   save();
@@ -253,6 +256,132 @@ const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 const now = new Date();
 document.getElementById('today-date').textContent =
   `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}`;
+
+// ============================
+//   REMINDER SYSTEM
+// ============================
+
+// ---- Request Notification Permission ----
+if ('Notification' in window && Notification.permission === 'default') {
+  Notification.requestPermission();
+}
+
+// ---- Sound using Web Audio API (no file needed) ----
+function playReminderSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Note 1
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.frequency.value = 880;
+    osc1.type = 'sine';
+    gain1.gain.setValueAtTime(0.4, ctx.currentTime);
+    gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc1.start(ctx.currentTime);
+    osc1.stop(ctx.currentTime + 0.4);
+
+    // Note 2
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.frequency.value = 1100;
+    osc2.type = 'sine';
+    gain2.gain.setValueAtTime(0, ctx.currentTime + 0.35);
+    gain2.gain.setValueAtTime(0.4, ctx.currentTime + 0.4);
+    gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.75);
+    osc2.start(ctx.currentTime + 0.4);
+    osc2.stop(ctx.currentTime + 0.75);
+
+    // Note 3
+    const osc3 = ctx.createOscillator();
+    const gain3 = ctx.createGain();
+    osc3.connect(gain3);
+    gain3.connect(ctx.destination);
+    osc3.frequency.value = 1320;
+    osc3.type = 'sine';
+    gain3.gain.setValueAtTime(0, ctx.currentTime + 0.7);
+    gain3.gain.setValueAtTime(0.5, ctx.currentTime + 0.75);
+    gain3.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.3);
+    osc3.start(ctx.currentTime + 0.75);
+    osc3.stop(ctx.currentTime + 1.3);
+
+  } catch (e) {
+    console.warn('Audio not supported:', e);
+  }
+}
+
+// ---- Show Toast ----
+let toastTimer = null;
+
+function showToast(message) {
+  const toast   = document.getElementById('reminder-toast');
+  const toastMsg = document.getElementById('toast-msg');
+
+  toastMsg.textContent = message;
+  toast.classList.add('show');
+
+  // Auto hide after 8 seconds
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => hideToast(), 8000);
+}
+
+function hideToast() {
+  document.getElementById('reminder-toast').classList.remove('show');
+}
+
+document.getElementById('toast-close').addEventListener('click', hideToast);
+
+// ---- Browser Notification ----
+function sendBrowserNotification(taskText) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification('🔔 Taskflow Reminder', {
+      body: taskText,
+      icon: 'https://ayushnandi718-dev.github.io/TO-DO-LIST/favicon.ico'
+    });
+  }
+}
+
+// ---- Check Reminders Every Minute ----
+function checkReminders() {
+  const now      = new Date();
+  const currDate = now.toISOString().slice(0, 10);           // "2026-05-02"
+  const currTime = now.toTimeString().slice(0, 5);           // "14:30"
+
+  todos.forEach((todo, i) => {
+    if (
+      todo.reminderTime &&
+      !todo.reminded &&
+      !todo.done &&
+      todo.reminderDate === currDate &&
+      todo.reminderTime === currTime
+    ) {
+      // Mark as reminded
+      todos[i].reminded = true;
+      save();
+
+      // Play sound
+      playReminderSound();
+
+      // Show toast
+      showToast(todo.text);
+
+      // Browser notification
+      sendBrowserNotification(todo.text);
+
+      render();
+    }
+  });
+}
+
+// Check every 30 seconds for accuracy
+setInterval(checkReminders, 30000);
+
+// Also check immediately on load
+checkReminders();
 
 // ---- Initial Render ----
 render();
