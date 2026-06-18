@@ -348,4 +348,4 @@ Frontend Developer • Creative Technologist
 
 ### 🔥 If you made it this far…
 
-Drop a ⭐ on the repo — it genuinely helps visibility.
+Drop a ⭐  on the repo — it genuinely helps visibility.
